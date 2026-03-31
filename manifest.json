@@ -2,10 +2,9 @@
 	"id": "folder-auto-properties",
 	"name": "Folder Auto Properties",
 	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
-	"description": "Automatically sets properties for files in a folder.",
+	"minAppVersion": "1.0.0",
+	"description": "Automatically apply specific properties to new notes based on their folder with a simple key-value UI.",
 	"author": "Kawê Cezar",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"authorUrl": "https://github.com/kawecz",
 	"isDesktopOnly": false
 }
