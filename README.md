@@ -25,6 +25,14 @@
 
 > **Note:** If you create a rule with a key but leave the value blank, that property will be ignored during note creation. This allows you to keep a "master list" of potential properties in your settings without cluttering every note.
 
+
+## 📸 Preview
+| Settings Overview | Property Configuration |
+| :---: | :---: |
+| ![Settings](public/imgs/img1.png) | ![Properties](public/imgs/img2.png) |
+
+... (rest of content) ...
+
 -----
 
 ## 📂 Installation
