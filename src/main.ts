@@ -1,80 +1,121 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import {
+	App,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+	TFile,
+	TAbstractFile,
+	TFolder,
+	AbstractInputSuggest,
+} from "obsidian";
 
-// Remember to rename these classes and interfaces!
+// 1. Updated Data Structure
+interface PropertyField {
+	key: string;
+	value: string;
+}
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+interface FolderRule {
+	folderPath: string;
+	properties: PropertyField[];
+}
+
+interface FolderAutoPropertiesSettings {
+	rules: FolderRule[];
+}
+
+const DEFAULT_SETTINGS: FolderAutoPropertiesSettings = {
+	rules: [],
+};
+
+// 2. Folder Auto-Complete Suggester
+class FolderSuggest extends AbstractInputSuggest<TFolder> {
+	textInputEl: HTMLInputElement;
+
+	constructor(app: App, textInputEl: HTMLInputElement) {
+		super(app, textInputEl);
+		this.textInputEl = textInputEl;
+	}
+
+	getSuggestions(inputStr: string): TFolder[] {
+		const abstractFiles = this.app.vault.getAllLoadedFiles();
+		const folders: TFolder[] = [];
+		const lowerCaseInputStr = inputStr.toLowerCase();
+
+		abstractFiles.forEach((file: TAbstractFile) => {
+			if (
+				file instanceof TFolder &&
+				file.path.toLowerCase().includes(lowerCaseInputStr)
+			) {
+				folders.push(file);
+			}
+		});
+
+		return folders;
+	}
+
+	renderSuggestion(folder: TFolder, el: HTMLElement): void {
+		el.setText(folder.path);
+	}
+
+	selectSuggestion(folder: TFolder): void {
+		this.textInputEl.value = folder.path;
+		this.textInputEl.trigger("input");
+		this.close();
+	}
+}
+
+// 3. The Main Plugin Class
+export default class FolderAutoProperties extends Plugin {
+	settings: FolderAutoPropertiesSettings;
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+		this.addSettingTab(new FolderAutoPropertiesSettingTab(this.app, this));
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+		this.registerEvent(
+			this.app.vault.on("create", (file: TAbstractFile) => {
+				if (file instanceof TFile && file.extension === "md") {
+					this.applyProperties(file);
 				}
-				return false;
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
+			}),
+		);
 	}
 
-	onunload() {
+	async applyProperties(file: TFile) {
+		const activeRule = this.settings.rules.find(
+			(rule) => rule.folderPath && file.path.startsWith(rule.folderPath),
+		);
+
+		if (activeRule && activeRule.properties.length > 0) {
+			setTimeout(async () => {
+				await this.app.fileManager.processFrontMatter(
+					file,
+					(frontmatter) => {
+						for (const prop of activeRule.properties) {
+							const key = prop.key.trim();
+							const value = prop.value.trim();
+
+							// THE CATCH: Only apply if both key and value are NOT empty
+							if (key !== "" && value !== "") {
+								if (frontmatter[key] === undefined) {
+									frontmatter[key] = value;
+								}
+							}
+						}
+					},
+				);
+			}, 500);
+		}
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData(),
+		);
 	}
 
 	async saveSettings() {
@@ -82,18 +123,141 @@ export default class MyPlugin extends Plugin {
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+// 4. The Settings UI
+class FolderAutoPropertiesSettingTab extends PluginSettingTab {
+	plugin: FolderAutoProperties;
+
+	constructor(app: App, plugin: FolderAutoProperties) {
+		super(app, plugin);
+		this.plugin = plugin;
 	}
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
+	display(): void {
+		const { containerEl } = this;
+		containerEl.empty();
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+		new Setting(containerEl)
+			.setName("Add new rule")
+			.setDesc("Create a new folder to properties mapping.")
+			.addButton((btn) =>
+				btn
+					.setButtonText("Add Rule")
+					.setCta()
+					.onClick(async () => {
+						// Pre-populate with some empty default suggestions
+						this.plugin.settings.rules.push({
+							folderPath: "",
+							properties: [
+								{ key: "tags", value: "" },
+								{ key: "banner", value: "" },
+							],
+						});
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+
+		containerEl.createEl("hr");
+
+		this.plugin.settings.rules.forEach((rule, ruleIndex) => {
+			const ruleContainer = containerEl.createDiv("rule-container");
+			ruleContainer.style.border =
+				"1px solid var(--background-modifier-border)";
+			ruleContainer.style.padding = "15px";
+			ruleContainer.style.marginBottom = "15px";
+			ruleContainer.style.borderRadius = "8px";
+
+			// Rule Header & Folder Path
+			new Setting(ruleContainer)
+				.setName(`Rule ${ruleIndex + 1}`)
+				.addText((text) => {
+					text.setPlaceholder("Type folder path...");
+					text.setValue(rule.folderPath);
+					// Attach the auto-complete suggester to this input
+					new FolderSuggest(this.app, text.inputEl);
+
+					text.onChange(async (value) => {
+						rule.folderPath = value;
+						await this.plugin.saveSettings();
+					});
+				})
+				.addButton((btn) =>
+					btn
+						.setButtonText("Delete Rule")
+						.setWarning()
+						.onClick(async () => {
+							this.plugin.settings.rules.splice(ruleIndex, 1);
+							await this.plugin.saveSettings();
+							this.display();
+						}),
+				);
+
+			// Properties Section inside the rule
+			const propsContainer = ruleContainer.createDiv(
+				"properties-container",
+			);
+			propsContainer.style.marginLeft = "20px";
+			propsContainer.style.marginTop = "10px";
+
+			propsContainer.createEl("h5", {
+				text: "Properties (Empty values will be ignored)",
+				cls: "setting-item-name",
+			});
+
+			// List existing properties
+			rule.properties.forEach((prop, propIndex) => {
+				const propSetting = new Setting(propsContainer)
+					.addText((text) =>
+						text
+							.setPlaceholder("Key (e.g., status)")
+							.setValue(prop.key)
+							.onChange(async (value) => {
+								const property = rule.properties[propIndex];
+								if (property) {
+									property.value = value;
+									await this.plugin.saveSettings();
+								}
+							}),
+					)
+					.addText((text) =>
+						text
+							.setPlaceholder("Value")
+							.setValue(prop.value)
+							.onChange(async (value) => {
+								const property = rule.properties[propIndex];
+								if (property) {
+									property.value = value;
+									await this.plugin.saveSettings();
+								}
+							}),
+					)
+					.addExtraButton((btn) =>
+						btn
+							.setIcon("trash")
+							.setTooltip("Remove property")
+							.onClick(async () => {
+								rule.properties.splice(propIndex, 1);
+								await this.plugin.saveSettings();
+								this.display(); // Refresh to show deletion
+							}),
+					);
+
+				// Make the text inputs a bit wider for better UX
+				propSetting.controlEl
+					.querySelectorAll("input")
+					.forEach((input) => {
+						input.style.width = "150px";
+					});
+			});
+
+			// Add new property button for this specific rule
+			new Setting(propsContainer).addButton((btn) =>
+				btn.setButtonText("+ Add Property").onClick(async () => {
+					rule.properties.push({ key: "", value: "" });
+					await this.plugin.saveSettings();
+					this.display();
+				}),
+			);
+		});
 	}
 }
