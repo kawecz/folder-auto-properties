@@ -95,14 +95,24 @@ export default class FolderAutoProperties extends Plugin {
 
                             if (key !== "" && rawValue !== "") {
                                 if (frontmatter[key] === undefined) {
-                                    // Handle multiple tags separated by commas
-                                    if (key.toLowerCase() === "tags") {
+                                    const lowerValue = rawValue.toLowerCase();
+
+                                    // 1. Handle Checkboxes (Booleans)
+                                    if (lowerValue === "true") {
+                                        frontmatter[key] = true;
+                                    } else if (lowerValue === "false") {
+                                        frontmatter[key] = false;
+                                    }
+                                    // 2. Handle Tags (Arrays)
+                                    else if (key.toLowerCase() === "tags") {
                                         const tagArray = rawValue
                                             .split(",")
                                             .map((t) => t.trim())
                                             .filter((t) => t !== "");
                                         frontmatter[key] = tagArray;
-                                    } else {
+                                    } 
+                                    // 3. Handle Regular Text
+                                    else {
                                         frontmatter[key] = rawValue;
                                     }
                                 }
@@ -196,7 +206,7 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
             propsContainer.style.marginTop = "10px";
 
             propsContainer.createEl("h5", {
-                text: "Properties (Separate tags with commas)",
+                text: "Properties (Tags: tag1, tag2 | Checkbox: true/false)",
                 cls: "setting-item-name",
             });
 
@@ -204,7 +214,7 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
                 const propSetting = new Setting(propsContainer)
                     .addText((text) =>
                         text
-                            .setPlaceholder("Key (e.g., tags)")
+                            .setPlaceholder("Key (e.g., status)")
                             .setValue(prop.key)
                             .onChange(async (value) => {
                                 prop.key = value;
@@ -213,7 +223,7 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
                     )
                     .addText((text) =>
                         text
-                            .setPlaceholder("Value (e.g., tag1, tag2)")
+                            .setPlaceholder("Value")
                             .setValue(prop.value)
                             .onChange(async (value) => {
                                 prop.value = value;
