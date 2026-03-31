@@ -47,7 +47,7 @@ Search for `Folder Auto Properties` in the Obsidian Community Plugins settings.
 
 ### Manual Installation
 
-1.  Download `main.js`, `manifest.json`, and `styles.css` from the latest [Release](https://www.google.com/search?q=https://github.com/kawecz/folder-auto-properties/releases).
+1.  Download `main.js`, `manifest.json`, and `styles.css` from the latest [Release](https://github.com/kawecz/folder-auto-properties/releases/latest).
 2.  Create a folder named `folder-auto-properties` in your vault's `.obsidian/plugins/` directory.
 3.  Move the downloaded files into that folder.
 4.  Reload Obsidian and enable the plugin.
@@ -68,7 +68,7 @@ The plugin listens for the `vault.on('create')` event. To ensure compatibility w
 
 ## 📄 License
 
-This project is licensed under the **MIT License** - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
+This project is licensed under the **MIT License** - see the [LICENSE](https://github.com/kawecz/folder-auto-properties/blob/main/LICENSE) file for details.
 
 -----
 
