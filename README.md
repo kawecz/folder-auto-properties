@@ -31,7 +31,6 @@
 | :---: | :---: |
 | ![Settings](public/imgs/img1.png) | ![Properties](public/imgs/img2.png) |
 
-... (rest of content) ...
 
 -----
 
