@@ -1,8 +1,30 @@
-/*
+.folder-auto-prop-rule-card {
+    border: 1px solid var(--background-modifier-border);
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 8px;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.folder-auto-prop-indent {
+    margin-left: 20px;
+    margin-top: 10px;
+}
 
-If your plugin does not need CSS, delete this file.
+.folder-auto-prop-stacked {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    border-top: none !important;
+    padding: 5px 0 !important;
+}
 
-*/
+.folder-auto-prop-stacked .setting-item-control {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+}
+
+.folder-auto-prop-stacked input {
+    width: 100% !important;
+    max-width: 150px !important;
+    margin: 2px !important;
+}

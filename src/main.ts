@@ -7,6 +7,7 @@ import {
     TAbstractFile,
     TFolder,
     AbstractInputSuggest,
+    Modal,
 } from "obsidian";
 
 interface PropertyField {
@@ -27,6 +28,80 @@ const DEFAULT_SETTINGS: FolderAutoPropertiesSettings = {
     rules: [],
 };
 
+// Helper to get the "LastTwo/Folder" name for the UI
+const getFolderDisplayName = (path: string): string => {
+    if (!path) return "";
+    const parts = path.split("/").filter(p => p.length > 0);
+    if (parts.length <= 2) return path;
+    return parts.slice(-2).join("/");
+};
+
+class FolderRuleModal extends Modal {
+    rule: FolderRule;
+    plugin: FolderAutoProperties;
+    onSave: () => Promise<void>;
+
+    constructor(app: App, plugin: FolderAutoProperties, rule: FolderRule, onSave: () => Promise<void>) {
+        super(app);
+        this.plugin = plugin;
+        this.rule = rule;
+        this.onSave = onSave;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl("h2", { text: `Rule for: ${this.rule.folderPath}` });
+
+        const propsContainer = contentEl.createDiv();
+
+        const renderProps = () => {
+            propsContainer.empty();
+            this.rule.properties.forEach((prop, index) => {
+                new Setting(propsContainer)
+                    .addText(cb => cb
+                        .setPlaceholder("Key")
+                        .setValue(prop.key)
+                        .onChange(async (v) => { 
+                            prop.key = v; 
+                            await this.plugin.saveSettings(); 
+                        }))
+                    .addText(cb => cb
+                        .setPlaceholder("Value")
+                        .setValue(prop.value)
+                        .onChange(async (v) => { 
+                            prop.value = v; 
+                            await this.plugin.saveSettings(); 
+                        }))
+                    .addExtraButton(cb => cb
+                        .setIcon("trash")
+                        .onClick(async () => {
+                            this.rule.properties.splice(index, 1);
+                            renderProps();
+                            await this.plugin.saveSettings();
+                        }));
+            });
+        };
+
+        renderProps();
+
+        new Setting(contentEl)
+            .addButton(bt => bt
+                .setButtonText("Add property")
+                .onClick(() => {
+                    this.rule.properties.push({ key: "", value: "" });
+                    renderProps();
+                }))
+            .addButton(bt => bt
+                .setButtonText("Save & close")
+                .setCta()
+                .onClick(async () => {
+                    await this.onSave();
+                    this.close();
+                }));
+    }
+}
+
 class FolderSuggest extends AbstractInputSuggest<TFolder> {
     textInputEl: HTMLInputElement;
 
@@ -41,14 +116,10 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
         const lowerCaseInputStr = inputStr.toLowerCase();
 
         abstractFiles.forEach((file: TAbstractFile) => {
-            if (
-                file instanceof TFolder &&
-                file.path.toLowerCase().includes(lowerCaseInputStr)
-            ) {
+            if (file instanceof TFolder && file.path.toLowerCase().includes(lowerCaseInputStr)) {
                 folders.push(file);
             }
         });
-
         return folders;
     }
 
@@ -64,16 +135,49 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
 }
 
 export default class FolderAutoProperties extends Plugin {
-    settings: FolderAutoPropertiesSettings;
+    settings!: FolderAutoPropertiesSettings;
 
     async onload() {
         await this.loadSettings();
         this.addSettingTab(new FolderAutoPropertiesSettingTab(this.app, this));
 
+        // Registry for right-click folder menu
+        this.registerEvent(
+            this.app.workspace.on("file-menu", (menu, file) => {
+                if (!(file instanceof TFolder)) return;
+
+                const existingRule = this.settings.rules.find(r => r.folderPath === file.path);
+
+                menu.addItem((item) => {
+                    item
+                        .setTitle(existingRule ? "Edit folder auto properties" : "Add folder auto property rule")
+                        .setIcon("settings-2")
+                        .setSection("action") // Forces it into the main action block
+                        .onClick(async () => {
+                            let ruleToEdit = existingRule;
+                            if (!ruleToEdit) {
+                                ruleToEdit = { 
+                                    folderPath: file.path, 
+                                    properties: [{ key: "tags", value: "" }] 
+                                };
+                                this.settings.rules.push(ruleToEdit);
+                                await this.saveSettings();
+                            }
+                            
+                            new FolderRuleModal(this.app, this, ruleToEdit, async () => {
+                                await this.saveSettings();
+                            }).open();
+                        });
+                });
+            })
+        );
+
         this.registerEvent(
             this.app.vault.on("create", (file: TAbstractFile) => {
                 if (file instanceof TFile && file.extension === "md") {
-                    this.applyProperties(file);
+                    window.setTimeout(() => {
+                        void this.applyProperties(file);
+                    }, 1000); 
                 }
             }),
         );
@@ -81,55 +185,36 @@ export default class FolderAutoProperties extends Plugin {
 
     async applyProperties(file: TFile) {
         const activeRule = this.settings.rules.find(
-            (rule) => rule.folderPath && file.path.startsWith(rule.folderPath),
+            (rule) => rule.folderPath && (file.path === rule.folderPath || file.path.startsWith(rule.folderPath + "/")),
         );
 
         if (activeRule && activeRule.properties.length > 0) {
-            setTimeout(async () => {
-                await this.app.fileManager.processFrontMatter(
-                    file,
-                    (frontmatter) => {
-                        for (const prop of activeRule.properties) {
-                            const key = prop.key.trim();
-                            const rawValue = prop.value.trim();
+            try {
+                await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, string | boolean | string[]>) => {
+                    for (const prop of activeRule.properties) {
+                        const key = prop.key.trim();
+                        const rawValue = prop.value.trim();
 
-                            if (key !== "" && rawValue !== "") {
-                                if (frontmatter[key] === undefined) {
-                                    const lowerValue = rawValue.toLowerCase();
-
-                                    // 1. Handle Checkboxes (Booleans)
-                                    if (lowerValue === "true") {
-                                        frontmatter[key] = true;
-                                    } else if (lowerValue === "false") {
-                                        frontmatter[key] = false;
-                                    }
-                                    // 2. Handle Tags (Arrays)
-                                    else if (key.toLowerCase() === "tags") {
-                                        const tagArray = rawValue
-                                            .split(",")
-                                            .map((t) => t.trim())
-                                            .filter((t) => t !== "");
-                                        frontmatter[key] = tagArray;
-                                    } 
-                                    // 3. Handle Regular Text
-                                    else {
-                                        frontmatter[key] = rawValue;
-                                    }
-                                }
+                        if (key !== "" && rawValue !== "") {
+                            if (frontmatter[key] === undefined) {
+                                const lowerValue = rawValue.toLowerCase();
+                                if (lowerValue === "true") frontmatter[key] = true;
+                                else if (lowerValue === "false") frontmatter[key] = false;
+                                else if (key.toLowerCase() === "tags") {
+                                    frontmatter[key] = rawValue.split(",").map(t => t.trim()).filter(t => t !== "");
+                                } else frontmatter[key] = rawValue;
                             }
                         }
-                    },
-                );
-            }, 500);
+                    }
+                });
+            } catch (e) {
+                console.error("Folder Auto Properties Error:", e);
+            }
         }
     }
 
     async loadSettings() {
-        this.settings = Object.assign(
-            {},
-            DEFAULT_SETTINGS,
-            await this.loadData(),
-        );
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as FolderAutoPropertiesSettings;
     }
 
     async saveSettings() {
@@ -151,18 +236,14 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Add new rule")
-            .setDesc("Create a new folder to properties mapping.")
             .addButton((btn) =>
                 btn
-                    .setButtonText("Add Rule")
+                    .setButtonText("Add rule")
                     .setCta()
                     .onClick(async () => {
                         this.plugin.settings.rules.push({
                             folderPath: "",
-                            properties: [
-                                { key: "tags", value: "" },
-                                { key: "banner", value: "" },
-                            ],
+                            properties: [{ key: "tags", value: "" }],
                         });
                         await this.plugin.saveSettings();
                         this.display();
@@ -172,89 +253,44 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
         containerEl.createEl("hr");
 
         this.plugin.settings.rules.forEach((rule, ruleIndex) => {
-            const ruleContainer = containerEl.createDiv("rule-container");
-            ruleContainer.style.border = "1px solid var(--background-modifier-border)";
-            ruleContainer.style.padding = "15px";
-            ruleContainer.style.marginBottom = "15px";
-            ruleContainer.style.borderRadius = "8px";
+            const ruleContainer = containerEl.createDiv("folder-auto-prop-rule-card");
+            
+            // UI Update: Rule Label with Last Two Folders
+            const folderLabel = getFolderDisplayName(rule.folderPath);
+            const ruleTitle = folderLabel ? `Rule ${ruleIndex + 1} - ${folderLabel}` : `Rule ${ruleIndex + 1}`;
 
             new Setting(ruleContainer)
-                .setName(`Rule ${ruleIndex + 1}`)
+                .setName(ruleTitle)
                 .addText((text) => {
-                    text.setPlaceholder("Type folder path...");
+                    text.setPlaceholder("Path...");
                     text.setValue(rule.folderPath);
                     new FolderSuggest(this.app, text.inputEl);
-
                     text.onChange(async (value) => {
                         rule.folderPath = value;
                         await this.plugin.saveSettings();
+                        // Optional: trigger refresh of the name immediately
+                        this.display(); 
                     });
                 })
                 .addButton((btn) =>
                     btn
-                        .setButtonText("Delete Rule")
-                        .setWarning()
+                        .setButtonText("Edit properties")
+                        .onClick(() => {
+                            new FolderRuleModal(this.app, this.plugin, rule, async () => {
+                                await this.plugin.saveSettings();
+                                this.display();
+                            }).open();
+                        }),
+                )
+                .addExtraButton((btn) =>
+                    btn
+                        .setIcon("trash")
                         .onClick(async () => {
                             this.plugin.settings.rules.splice(ruleIndex, 1);
                             await this.plugin.saveSettings();
                             this.display();
                         }),
                 );
-
-            const propsContainer = ruleContainer.createDiv("properties-container");
-            propsContainer.style.marginLeft = "20px";
-            propsContainer.style.marginTop = "10px";
-
-            propsContainer.createEl("h5", {
-                text: "Properties (Tags: tag1, tag2 | Checkbox: true/false)",
-                cls: "setting-item-name",
-            });
-
-            rule.properties.forEach((prop, propIndex) => {
-                const propSetting = new Setting(propsContainer)
-                    .addText((text) =>
-                        text
-                            .setPlaceholder("Key (e.g., status)")
-                            .setValue(prop.key)
-                            .onChange(async (value) => {
-                                prop.key = value;
-                                await this.plugin.saveSettings();
-                            }),
-                    )
-                    .addText((text) =>
-                        text
-                            .setPlaceholder("Value")
-                            .setValue(prop.value)
-                            .onChange(async (value) => {
-                                prop.value = value;
-                                await this.plugin.saveSettings();
-                            }),
-                    )
-                    .addExtraButton((btn) =>
-                        btn
-                            .setIcon("trash")
-                            .setTooltip("Remove property")
-                            .onClick(async () => {
-                                rule.properties.splice(propIndex, 1);
-                                await this.plugin.saveSettings();
-                                this.display();
-                            }),
-                    );
-
-                propSetting.controlEl
-                    .querySelectorAll("input")
-                    .forEach((input) => {
-                        input.style.width = "150px";
-                    });
-            });
-
-            new Setting(propsContainer).addButton((btn) =>
-                btn.setButtonText("+ Add Property").onClick(async () => {
-                    rule.properties.push({ key: "", value: "" });
-                    await this.plugin.saveSettings();
-                    this.display();
-                }),
-            );
         });
     }
 }
