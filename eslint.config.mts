@@ -1,7 +1,6 @@
 import tseslint from 'typescript-eslint';
 import obsidianmd from "eslint-plugin-obsidianmd";
 import globals from "globals";
-import { globalIgnores } from "eslint/config";
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -9,10 +8,26 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export default tseslint.config(
+    // 1. GLOBAL IGNORES 
+    // This must be the first object and contain ONLY 'ignores'
     {
+        ignores: [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/*.mjs",
+            "**/*.js",
+            "**/versions.json",
+            "**/manifest.json",
+            "**/version-bump.mjs"
+        ]
+    },
+    // 2. MAIN CONFIGURATION
+    {
+        files: ["src/**/*.ts", "eslint.config.mts"],
         languageOptions: {
             globals: {
                 ...globals.browser,
+                ...globals.node // Added node globals for the config file itself
             },
             parserOptions: {
                 projectService: {
@@ -25,18 +40,11 @@ export default tseslint.config(
                 extraFileExtensions: ['.json']
             },
         },
+        // You can add custom rules here if needed
+        rules: {
+            "no-unused-vars": "warn"
+        }
     },
-    // We cast to 'any' here to resolve the "LegacyConfigObject" conflict 
-    // and use a fallback empty array if the plugin fails to load
-    ...(obsidianmd?.configs?.recommended ? [obsidianmd.configs.recommended as any] : []),
-    
-    globalIgnores([
-        "node_modules",
-        "dist",
-        "esbuild.config.mjs",
-        "eslint.config.js",
-        "version-bump.mjs",
-        "versions.json",
-        "main.js",
-    ]),
+    // 3. PLUGIN CONFIGS
+    ...(obsidianmd?.configs?.recommended ? [obsidianmd.configs.recommended as any] : [])
 );
