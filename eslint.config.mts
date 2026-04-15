@@ -8,8 +8,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export default tseslint.config(
-    // 1. GLOBAL IGNORES 
-    // This must be the first object and contain ONLY 'ignores'
     {
         ignores: [
             "**/node_modules/**",
@@ -18,16 +16,19 @@ export default tseslint.config(
             "**/*.js",
             "**/versions.json",
             "**/manifest.json",
-            "**/version-bump.mjs"
+            "**/version-bump.mjs",
+            "**/main.js"
         ]
     },
-    // 2. MAIN CONFIGURATION
     {
         files: ["src/**/*.ts", "eslint.config.mts"],
+        plugins: {
+            obsidianmd: obsidianmd as any // Type cast for legacy plugin compatibility
+        },
         languageOptions: {
             globals: {
                 ...globals.browser,
-                ...globals.node // Added node globals for the config file itself
+                ...globals.node
             },
             parserOptions: {
                 projectService: {
@@ -40,11 +41,10 @@ export default tseslint.config(
                 extraFileExtensions: ['.json']
             },
         },
-        // You can add custom rules here if needed
         rules: {
+            // We cast to 'any' to bypass the complex LegacyConfigObject union types
+            ...((obsidianmd?.configs?.recommended as any)?.rules ?? {}),
             "no-unused-vars": "warn"
         }
-    },
-    // 3. PLUGIN CONFIGS
-    ...(obsidianmd?.configs?.recommended ? [obsidianmd.configs.recommended as any] : [])
+    }
 );
