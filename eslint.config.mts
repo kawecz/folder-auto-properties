@@ -21,30 +21,27 @@ export default tseslint.config(
         ]
     },
     {
-        files: ["src/**/*.ts", "eslint.config.mts"],
-        plugins: {
-            obsidianmd: obsidianmd as any // Type cast for legacy plugin compatibility
-        },
+        files: ["**/*.ts", "**/*.mts"],
         languageOptions: {
+            // This is the crucial part: telling ESLint how to read TS
+            parser: tseslint.parser,
+            parserOptions: {
+                projectService: true,
+                tsconfigRootDir: __dirname,
+            },
             globals: {
                 ...globals.browser,
                 ...globals.node
             },
-            parserOptions: {
-                projectService: {
-                    allowDefaultProject: [
-                        'eslint.config.mts',
-                        'manifest.json'
-                    ]
-                },
-                tsconfigRootDir: __dirname,
-                extraFileExtensions: ['.json']
-            },
+        },
+        plugins: {
+            "@typescript-eslint": tseslint.plugin,
+            obsidianmd: obsidianmd as any
         },
         rules: {
-            // We cast to 'any' to bypass the complex LegacyConfigObject union types
             ...((obsidianmd?.configs?.recommended as any)?.rules ?? {}),
-            "no-unused-vars": "warn"
+            "no-unused-vars": "off", // Usually handled by TS
+            "@typescript-eslint/no-unused-vars": "warn"
         }
     }
 );
