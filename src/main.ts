@@ -180,7 +180,7 @@ export default class FolderAutoProperties extends Plugin {
             matchingRules.sort((a, b) => a.folderPath.length - b.folderPath.length);
 
             try {
-                await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, string | boolean | string[]>) => {
+                await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, any>) => {
                     for (const rule of matchingRules) {
                         for (const prop of rule.properties) {
                             const key = prop.key.trim();
@@ -188,7 +188,7 @@ export default class FolderAutoProperties extends Plugin {
                             
                             if (key !== "" && rawValue !== "") {
                                 const lowerValue = rawValue.toLowerCase();
-                                let parsedValue: string | boolean | string[] = rawValue;
+                                let parsedValue: any = rawValue;
 
                                 if (lowerValue === "true") parsedValue = true;
                                 else if (lowerValue === "false") parsedValue = false;
@@ -205,7 +205,11 @@ export default class FolderAutoProperties extends Plugin {
                                     }
                                     frontmatter[key] = [...new Set([...existingTags, ...(parsedValue as string[])])];
                                 } else {
-                                    frontmatter[key] = parsedValue as string | boolean;
+                                    // FIX: Only apply if property is missing or empty string
+                                    const currentValue = frontmatter[key];
+                                    if (currentValue === undefined || currentValue === null || currentValue === "") {
+                                        frontmatter[key] = parsedValue;
+                                    }
                                 }
                             }
                         }
@@ -250,20 +254,17 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 
         containerEl.createEl("hr");
 
-        // Sort rules so nesting logic works correctly
         this.plugin.settings.rules.sort((a, b) => a.folderPath.localeCompare(b.folderPath));
 
         const subRuleCounters: Record<string, number> = {};
         let topLevelCount = 0;
 
         this.plugin.settings.rules.forEach((rule, ruleIndex) => {
-            // Find if this rule has a parent rule
             const parentRule = this.plugin.settings.rules.find(r => 
                 r.folderPath !== rule.folderPath && 
                 rule.folderPath.startsWith(r.folderPath + "/")
             );
 
-            // Calculate depth
             const depth = this.plugin.settings.rules.filter(r => 
                 r.folderPath !== rule.folderPath && 
                 rule.folderPath.startsWith(r.folderPath + "/")
