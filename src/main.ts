@@ -38,20 +38,21 @@ const getFolderDisplayName = (path: string): string => {
 class FolderRuleModal extends Modal {
     rule: FolderRule;
     plugin: FolderAutoProperties;
-    isSaved: boolean = false; // Track if user actually hit Save
+    isSaved: boolean = false;
     onSave: (rule: FolderRule) => Promise<void>;
 
     constructor(app: App, plugin: FolderAutoProperties, rule: FolderRule, onSave: (rule: FolderRule) => Promise<void>) {
         super(app);
         this.plugin = plugin;
-        this.rule = JSON.parse(JSON.stringify(rule)) as FolderRule; // Work on a copy to allow canceling
+        this.rule = JSON.parse(JSON.stringify(rule)) as FolderRule;
         this.onSave = onSave;
     }
 
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.createEl("h2", { text: `Rule for: ${this.rule.folderPath}` });
+        
+        new Setting(contentEl).setName(`Rule for: ${this.rule.folderPath}`).setHeading();
 
         const propsContainer = contentEl.createDiv();
 
@@ -86,7 +87,7 @@ class FolderRuleModal extends Modal {
                     renderProps();
                 }))
             .addButton(bt => bt
-                .setButtonText("Save & close")
+                .setButtonText("Save and close")
                 .setCta()
                 .onClick(async () => {
                     this.isSaved = true;
@@ -140,8 +141,7 @@ export default class FolderAutoProperties extends Plugin {
                         .setTitle(existingRule ? "Edit folder auto properties" : "Add folder auto property rule")
                         .setIcon("settings-2")
                         .setSection("action")
-                        .onClick(async () => {
-                            // If it's new, we pass a temporary object
+                        .onClick(() => {
                             const ruleToEdit = existingRule ? existingRule : { 
                                 folderPath: file.path, 
                                 properties: [{ key: "tags", value: "" }] 
@@ -163,40 +163,66 @@ export default class FolderAutoProperties extends Plugin {
         this.registerEvent(
             this.app.vault.on("create", (file: TAbstractFile) => {
                 if (file instanceof TFile && file.extension === "md") {
-                    window.setTimeout(() => { void this.applyProperties(file); }, 1000); 
+                    window.setTimeout(() => { 
+                        this.applyProperties(file).catch(console.error); 
+                    }, 1000); 
                 }
             }),
         );
     }
 
     async applyProperties(file: TFile) {
-        const activeRule = this.settings.rules.find(
-            (rule) => rule.folderPath && (file.path === rule.folderPath || file.path.startsWith(rule.folderPath + "/")),
+        const matchingRules = this.settings.rules.filter(
+            (rule) => rule.folderPath && (file.path === rule.folderPath || file.path.startsWith(rule.folderPath + "/"))
         );
-        if (activeRule && activeRule.properties.length > 0) {
+
+        if (matchingRules.length > 0) {
+            matchingRules.sort((a, b) => a.folderPath.length - b.folderPath.length);
+
             try {
-                await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, boolean | string | string[]>) => {
-                    for (const prop of activeRule.properties) {
-                        const key = prop.key.trim();
-                        const rawValue = prop.value.trim();
-                        if (key !== "" && rawValue !== "") {
-                            if (frontmatter[key] === undefined) {
+                await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, string | boolean | string[]>) => {
+                    for (const rule of matchingRules) {
+                        for (const prop of rule.properties) {
+                            const key = prop.key.trim();
+                            const rawValue = prop.value.trim();
+                            
+                            if (key !== "" && rawValue !== "") {
                                 const lowerValue = rawValue.toLowerCase();
-                                if (lowerValue === "true") frontmatter[key] = true;
-                                else if (lowerValue === "false") frontmatter[key] = false;
+                                let parsedValue: string | boolean | string[] = rawValue;
+
+                                if (lowerValue === "true") parsedValue = true;
+                                else if (lowerValue === "false") parsedValue = false;
                                 else if (key.toLowerCase() === "tags") {
-                                    frontmatter[key] = rawValue.split(",").map(t => t.trim()).filter(t => t !== "");
-                                } else frontmatter[key] = rawValue;
+                                    parsedValue = rawValue.split(",").map(t => t.trim()).filter(t => t !== "");
+                                }
+
+                                if (key.toLowerCase() === "tags") {
+                                    let existingTags: string[] = [];
+                                    if (Array.isArray(frontmatter[key])) {
+                                        existingTags = frontmatter[key];
+                                    } else if (typeof frontmatter[key] === "string") {
+                                        existingTags = frontmatter[key].split(",").map((t: string) => t.trim());
+                                    }
+                                    frontmatter[key] = [...new Set([...existingTags, ...(parsedValue as string[])])];
+                                } else {
+                                    frontmatter[key] = parsedValue as string | boolean;
+                                }
                             }
                         }
                     }
                 });
-            } catch (e) { console.error("Folder Auto Properties Error:", e); }
+            } catch (e) { 
+                console.error("Folder Auto Properties Error:", e); 
+            }
         }
     }
 
-    async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as FolderAutoPropertiesSettings; }
-    async saveSettings() { await this.saveData(this.settings); }
+    async loadSettings() { 
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as FolderAutoPropertiesSettings; 
+    }
+    async saveSettings() { 
+        await this.saveData(this.settings); 
+    }
 }
 
 class FolderAutoPropertiesSettingTab extends PluginSettingTab {
@@ -212,7 +238,7 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
             .addButton((btn) => btn
                 .setButtonText("Add rule")
                 .setCta()
-                .onClick(async () => {
+                .onClick(() => {
                     const newRule = { folderPath: "", properties: [{ key: "tags", value: "" }] };
                     new FolderRuleModal(this.app, this.plugin, newRule, async (savedRule) => {
                         this.plugin.settings.rules.push(savedRule);
@@ -224,10 +250,45 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 
         containerEl.createEl("hr");
 
+        // Sort rules so nesting logic works correctly
+        this.plugin.settings.rules.sort((a, b) => a.folderPath.localeCompare(b.folderPath));
+
+        const subRuleCounters: Record<string, number> = {};
+        let topLevelCount = 0;
+
         this.plugin.settings.rules.forEach((rule, ruleIndex) => {
-            const ruleContainer = containerEl.createDiv("folder-auto-prop-rule-card");
+            // Find if this rule has a parent rule
+            const parentRule = this.plugin.settings.rules.find(r => 
+                r.folderPath !== rule.folderPath && 
+                rule.folderPath.startsWith(r.folderPath + "/")
+            );
+
+            // Calculate depth
+            const depth = this.plugin.settings.rules.filter(r => 
+                r.folderPath !== rule.folderPath && 
+                rule.folderPath.startsWith(r.folderPath + "/")
+            ).length;
+
+            let ruleTitle = "";
             const folderLabel = getFolderDisplayName(rule.folderPath);
-            const ruleTitle = folderLabel ? `Rule ${ruleIndex + 1} - ${folderLabel}` : `Rule ${ruleIndex + 1}`;
+
+            if (depth === 0) {
+                topLevelCount++;
+                ruleTitle = `Rule ${topLevelCount}`;
+            } else {
+                const parentPath = parentRule?.folderPath || "root";
+                subRuleCounters[parentPath] = (subRuleCounters[parentPath] || 0) + 1;
+                ruleTitle = `Sub rule ${subRuleCounters[parentPath]}`;
+            }
+
+            if (folderLabel) ruleTitle += ` - ${folderLabel}`;
+
+            const ruleContainer = containerEl.createDiv("folder-auto-prop-rule-card");
+            
+            if (depth > 0) {
+                ruleContainer.addClass("folder-auto-prop-nested");
+                ruleContainer.addClass(`folder-auto-prop-depth-${Math.min(depth, 5)}`);
+            }
 
             new Setting(ruleContainer)
                 .setName(ruleTitle)

@@ -1,8 +1,8 @@
 {
   "id": "folder-auto-properties",
   "name": "Folder Auto Properties",
-  "version": "1.0.0",
-  "minAppVersion": "1.0.0",
+  "version": "1.1.1",
+  "minAppVersion": "1.1.1",
   "description": "Automatically apply specific properties to new notes based on their folder with a simple key-value UI.",
   "author": "Kawê Cezar",
   "authorUrl": "https://github.com/kawecz",

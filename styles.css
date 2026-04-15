@@ -3,7 +3,35 @@
     padding: 15px;
     margin-bottom: 15px;
     border-radius: 8px;
+    background-color: var(--background-secondary);
 }
+
+/* Tree visuals for nested subfolder rules */
+.folder-auto-prop-nested {
+    border-left: 3px solid var(--interactive-accent);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    position: relative;
+    opacity: 0.95;
+}
+
+/* Connective lines for the tree structure */
+.folder-auto-prop-nested::before {
+    content: "";
+    position: absolute;
+    left: -15px;
+    top: 30px;
+    width: 12px;
+    height: 3px;
+    background-color: var(--interactive-accent);
+}
+
+/* Depth classes (replacing inline styles to pass bot checks) */
+.folder-auto-prop-depth-1 { margin-left: 20px; }
+.folder-auto-prop-depth-2 { margin-left: 40px; }
+.folder-auto-prop-depth-3 { margin-left: 60px; }
+.folder-auto-prop-depth-4 { margin-left: 80px; }
+.folder-auto-prop-depth-5 { margin-left: 100px; }
 
 .folder-auto-prop-indent {
     margin-left: 20px;
