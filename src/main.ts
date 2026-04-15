@@ -162,10 +162,20 @@ export default class FolderAutoProperties extends Plugin {
 
         this.registerEvent(
             this.app.vault.on("create", (file: TAbstractFile) => {
+                // Ensure it's a markdown file
                 if (file instanceof TFile && file.extension === "md") {
-                    window.setTimeout(() => { 
-                        this.applyProperties(file).catch(console.error); 
-                    }, 1000); 
+                    
+                    // CRITICAL: Only apply to notes created in the last 5 seconds.
+                    // This prevents applying rules to existing notes on app startup.
+                    const now = Date.now();
+                    const createdTime = file.stat.ctime;
+                    const diffSeconds = (now - createdTime) / 1000;
+
+                    if (diffSeconds < 5) {
+                        window.setTimeout(() => { 
+                            this.applyProperties(file).catch(console.error); 
+                        }, 500); // reduced timeout slightly for better responsiveness
+                    }
                 }
             }),
         );
@@ -177,6 +187,7 @@ export default class FolderAutoProperties extends Plugin {
         );
 
         if (matchingRules.length > 0) {
+            // Sort by path length to ensure the most specific rule (nested) is applied last/overrides
             matchingRules.sort((a, b) => a.folderPath.length - b.folderPath.length);
 
             try {
@@ -205,9 +216,8 @@ export default class FolderAutoProperties extends Plugin {
                                     }
                                     frontmatter[key] = [...new Set([...existingTags, ...(parsedValue as string[])])];
                                 } else {
-                                    // FIX: Only apply if property is missing or empty string
-                                    const currentValue = frontmatter[key];
-                                    if (currentValue === undefined || currentValue === null || currentValue === "") {
+                                    // Only set if not already present or empty to respect templates
+                                    if (!frontmatter[key] || frontmatter[key] === "") {
                                         frontmatter[key] = parsedValue;
                                     }
                                 }
@@ -239,6 +249,7 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Add new rule")
+            .setDesc("Define properties for a specific folder. Rules apply to new notes only.")
             .addButton((btn) => btn
                 .setButtonText("Add rule")
                 .setCta()
