@@ -10,6 +10,13 @@ import {
     Modal,
 } from "obsidian";
 
+/**
+ * Interface for the FrontMatter object to avoid using 'any'
+ */
+interface FrontMatter {
+    [key: string]: string | string[] | boolean | number | null | undefined;
+}
+
 interface PropertyField {
     key: string;
     value: string;
@@ -41,7 +48,7 @@ const getFolderDisplayName = (path: string): string => {
 class FolderRuleModal extends Modal {
     rule: FolderRule;
     plugin: FolderAutoProperties;
-    isSaved: boolean = false;
+    isSaved = false;
     onSave: (rule: FolderRule) => Promise<void>;
 
     constructor(app: App, plugin: FolderAutoProperties, rule: FolderRule, onSave: (rule: FolderRule) => Promise<void>) {
@@ -92,7 +99,6 @@ class FolderRuleModal extends Modal {
             .addButton(bt => bt
                 .setButtonText("Save and close")
                 .setCta()
-                // Fix for the bot's "Promise returned where void expected" error
                 .onClick(() => {
                     this.isSaved = true;
                     this.onSave(this.rule)
@@ -109,7 +115,6 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
         this.textInputEl = textInputEl;
     }
     
-    // Optimized folder filtering
     getSuggestions(inputStr: string): TFolder[] {
         const lowerCaseInputStr = inputStr.toLowerCase();
         return this.app.vault.getAllLoadedFiles()
@@ -179,22 +184,21 @@ export default class FolderAutoProperties extends Plugin {
         );
     }
 
-    // Copilot's extracted helpers for cleaner logic
     private parseTags(rawValue: string): string[] {
         return rawValue.split(",").map(t => t.trim()).filter(t => t !== "");
     }
 
-    private mergeTags(existing: any, newTags: string[]): string[] {
+    private mergeTags(existing: string | string[] | boolean | number | null | undefined, newTags: string[]): string[] {
         let existingTags: string[] = [];
         if (Array.isArray(existing)) {
-            existingTags = existing;
+            existingTags = existing.map(String);
         } else if (typeof existing === "string") {
             existingTags = this.parseTags(existing);
         }
         return [...new Set([...existingTags, ...newTags])];
     }
 
-    private parsePropertyValue(key: string, rawValue: string): any {
+    private parsePropertyValue(key: string, rawValue: string): string | string[] | boolean {
         const lowerValue = rawValue.toLowerCase();
         
         if (lowerValue === "true") return true;
@@ -216,7 +220,7 @@ export default class FolderAutoProperties extends Plugin {
         matchingRules.sort((a, b) => a.folderPath.length - b.folderPath.length);
 
         try {
-            await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, any>) => {
+            await this.app.fileManager.processFrontMatter(file, (frontmatter: FrontMatter) => {
                 for (const rule of matchingRules) {
                     for (const prop of rule.properties) {
                         const key = prop.key.trim();
@@ -228,7 +232,9 @@ export default class FolderAutoProperties extends Plugin {
                         const keyLower = key.toLowerCase();
 
                         if (keyLower === "tags") {
-                            frontmatter[key] = this.mergeTags(frontmatter[key], parsedValue);
+                            // Ensure parsedValue is treated as string[] for mergeTags
+                            const tagsToMerge = Array.isArray(parsedValue) ? parsedValue : [String(parsedValue)];
+                            frontmatter[key] = this.mergeTags(frontmatter[key], tagsToMerge);
                         } else if (!frontmatter[key] || frontmatter[key] === "") {
                             frontmatter[key] = parsedValue;
                         }
@@ -318,7 +324,6 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
                     text.setPlaceholder("Path...");
                     text.setValue(rule.folderPath);
                     new FolderSuggest(this.app, text.inputEl);
-                    // Fixed the bot's promise warning here too
                     text.onChange((value) => {
                         rule.folderPath = value;
                         this.plugin.saveSettings()
