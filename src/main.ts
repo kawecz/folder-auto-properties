@@ -28,6 +28,9 @@ const DEFAULT_SETTINGS: FolderAutoPropertiesSettings = {
     rules: [],
 };
 
+const FILE_CREATION_DEBOUNCE_MS = 500;
+const FILE_CREATION_WINDOW_SECONDS = 5;
+
 const getFolderDisplayName = (path: string): string => {
     if (!path) return "";
     const parts = path.split("/").filter(p => p.length > 0);
@@ -89,10 +92,12 @@ class FolderRuleModal extends Modal {
             .addButton(bt => bt
                 .setButtonText("Save and close")
                 .setCta()
-                .onClick(async () => {
+                // Fix for the bot's "Promise returned where void expected" error
+                .onClick(() => {
                     this.isSaved = true;
-                    await this.onSave(this.rule);
-                    this.close();
+                    this.onSave(this.rule)
+                        .then(() => this.close())
+                        .catch(console.error);
                 }));
     }
 }
@@ -103,17 +108,14 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
         super(app, textInputEl);
         this.textInputEl = textInputEl;
     }
+    
+    // Optimized folder filtering
     getSuggestions(inputStr: string): TFolder[] {
-        const abstractFiles = this.app.vault.getAllLoadedFiles();
-        const folders: TFolder[] = [];
         const lowerCaseInputStr = inputStr.toLowerCase();
-        abstractFiles.forEach((file: TAbstractFile) => {
-            if (file instanceof TFolder && file.path.toLowerCase().includes(lowerCaseInputStr)) {
-                folders.push(file);
-            }
-        });
-        return folders;
+        return this.app.vault.getAllLoadedFiles()
+            .filter((file): file is TFolder => file instanceof TFolder && file.path.toLowerCase().includes(lowerCaseInputStr));
     }
+    
     renderSuggestion(folder: TFolder, el: HTMLElement): void { el.setText(folder.path); }
     selectSuggestion(folder: TFolder): void {
         this.textInputEl.value = folder.path;
@@ -162,23 +164,46 @@ export default class FolderAutoProperties extends Plugin {
 
         this.registerEvent(
             this.app.vault.on("create", (file: TAbstractFile) => {
-                // Ensure it's a markdown file
                 if (file instanceof TFile && file.extension === "md") {
-                    
-                    // CRITICAL: Only apply to notes created in the last 5 seconds.
-                    // This prevents applying rules to existing notes on app startup.
                     const now = Date.now();
                     const createdTime = file.stat.ctime;
                     const diffSeconds = (now - createdTime) / 1000;
 
-                    if (diffSeconds < 5) {
+                    if (diffSeconds < FILE_CREATION_WINDOW_SECONDS) {
                         window.setTimeout(() => { 
                             this.applyProperties(file).catch(console.error); 
-                        }, 500); // reduced timeout slightly for better responsiveness
+                        }, FILE_CREATION_DEBOUNCE_MS);
                     }
                 }
             }),
         );
+    }
+
+    // Copilot's extracted helpers for cleaner logic
+    private parseTags(rawValue: string): string[] {
+        return rawValue.split(",").map(t => t.trim()).filter(t => t !== "");
+    }
+
+    private mergeTags(existing: any, newTags: string[]): string[] {
+        let existingTags: string[] = [];
+        if (Array.isArray(existing)) {
+            existingTags = existing;
+        } else if (typeof existing === "string") {
+            existingTags = this.parseTags(existing);
+        }
+        return [...new Set([...existingTags, ...newTags])];
+    }
+
+    private parsePropertyValue(key: string, rawValue: string): any {
+        const lowerValue = rawValue.toLowerCase();
+        
+        if (lowerValue === "true") return true;
+        if (lowerValue === "false") return false;
+        if (key.toLowerCase() === "tags") {
+            return this.parseTags(rawValue);
+        }
+        
+        return rawValue;
     }
 
     async applyProperties(file: TFile) {
@@ -186,54 +211,39 @@ export default class FolderAutoProperties extends Plugin {
             (rule) => rule.folderPath && (file.path === rule.folderPath || file.path.startsWith(rule.folderPath + "/"))
         );
 
-        if (matchingRules.length > 0) {
-            // Sort by path length to ensure the most specific rule (nested) is applied last/overrides
-            matchingRules.sort((a, b) => a.folderPath.length - b.folderPath.length);
+        if (matchingRules.length === 0) return;
 
-            try {
-                await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, any>) => {
-                    for (const rule of matchingRules) {
-                        for (const prop of rule.properties) {
-                            const key = prop.key.trim();
-                            const rawValue = prop.value.trim();
-                            
-                            if (key !== "" && rawValue !== "") {
-                                const lowerValue = rawValue.toLowerCase();
-                                let parsedValue: any = rawValue;
+        matchingRules.sort((a, b) => a.folderPath.length - b.folderPath.length);
 
-                                if (lowerValue === "true") parsedValue = true;
-                                else if (lowerValue === "false") parsedValue = false;
-                                else if (key.toLowerCase() === "tags") {
-                                    parsedValue = rawValue.split(",").map(t => t.trim()).filter(t => t !== "");
-                                }
+        try {
+            await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, any>) => {
+                for (const rule of matchingRules) {
+                    for (const prop of rule.properties) {
+                        const key = prop.key.trim();
+                        const value = prop.value.trim();
+                        
+                        if (!key || !value) continue;
 
-                                if (key.toLowerCase() === "tags") {
-                                    let existingTags: string[] = [];
-                                    if (Array.isArray(frontmatter[key])) {
-                                        existingTags = frontmatter[key];
-                                    } else if (typeof frontmatter[key] === "string") {
-                                        existingTags = frontmatter[key].split(",").map((t: string) => t.trim());
-                                    }
-                                    frontmatter[key] = [...new Set([...existingTags, ...(parsedValue as string[])])];
-                                } else {
-                                    // Only set if not already present or empty to respect templates
-                                    if (!frontmatter[key] || frontmatter[key] === "") {
-                                        frontmatter[key] = parsedValue;
-                                    }
-                                }
-                            }
+                        const parsedValue = this.parsePropertyValue(key, value);
+                        const keyLower = key.toLowerCase();
+
+                        if (keyLower === "tags") {
+                            frontmatter[key] = this.mergeTags(frontmatter[key], parsedValue);
+                        } else if (!frontmatter[key] || frontmatter[key] === "") {
+                            frontmatter[key] = parsedValue;
                         }
                     }
-                });
-            } catch (e) { 
-                console.error("Folder Auto Properties Error:", e); 
-            }
+                }
+            });
+        } catch (e) { 
+            console.error("Folder Auto Properties Error:", e); 
         }
     }
 
     async loadSettings() { 
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as FolderAutoPropertiesSettings; 
     }
+    
     async saveSettings() { 
         await this.saveData(this.settings); 
     }
@@ -308,10 +318,12 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
                     text.setPlaceholder("Path...");
                     text.setValue(rule.folderPath);
                     new FolderSuggest(this.app, text.inputEl);
-                    text.onChange(async (value) => {
+                    // Fixed the bot's promise warning here too
+                    text.onChange((value) => {
                         rule.folderPath = value;
-                        await this.plugin.saveSettings();
-                        this.display(); 
+                        this.plugin.saveSettings()
+                            .then(() => this.display())
+                            .catch(console.error); 
                     });
                 })
                 .addButton((btn) => btn
@@ -326,10 +338,11 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
                 )
                 .addExtraButton((btn) => btn
                     .setIcon("trash")
-                    .onClick(async () => {
+                    .onClick(() => {
                         this.plugin.settings.rules.splice(ruleIndex, 1);
-                        await this.plugin.saveSettings();
-                        this.display();
+                        this.plugin.saveSettings()
+                            .then(() => this.display())
+                            .catch(console.error);
                     })
                 );
         });
