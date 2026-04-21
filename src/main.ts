@@ -10,9 +10,6 @@ import {
     Modal,
 } from "obsidian";
 
-/**
- * Interface for the FrontMatter object to avoid using 'any'
- */
 interface FrontMatter {
     [key: string]: string | string[] | boolean | number | null | undefined;
 }
@@ -36,7 +33,6 @@ const DEFAULT_SETTINGS: FolderAutoPropertiesSettings = {
 };
 
 const FILE_CREATION_DEBOUNCE_MS = 500;
-const FILE_CREATION_WINDOW_SECONDS = 5;
 
 const getFolderDisplayName = (path: string): string => {
     if (!path) return "";
@@ -48,7 +44,6 @@ const getFolderDisplayName = (path: string): string => {
 class FolderRuleModal extends Modal {
     rule: FolderRule;
     plugin: FolderAutoProperties;
-    isSaved = false;
     onSave: (rule: FolderRule) => Promise<void>;
 
     constructor(app: App, plugin: FolderAutoProperties, rule: FolderRule, onSave: (rule: FolderRule) => Promise<void>) {
@@ -63,7 +58,6 @@ class FolderRuleModal extends Modal {
         contentEl.empty();
         
         new Setting(contentEl).setName(`Rule for: ${this.rule.folderPath}`).setHeading();
-
         const propsContainer = contentEl.createDiv();
 
         const renderProps = () => {
@@ -100,7 +94,6 @@ class FolderRuleModal extends Modal {
                 .setButtonText("Save and close")
                 .setCta()
                 .onClick(() => {
-                    this.isSaved = true;
                     this.onSave(this.rule)
                         .then(() => this.close())
                         .catch(console.error);
@@ -131,15 +124,16 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
 
 export default class FolderAutoProperties extends Plugin {
     settings!: FolderAutoPropertiesSettings;
+    private processingFiles: Set<string> = new Set();
 
     async onload() {
         await this.loadSettings();
         this.addSettingTab(new FolderAutoPropertiesSettingTab(this.app, this));
 
+        // Event for context menu on folders
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu, file) => {
                 if (!(file instanceof TFolder)) return;
-
                 const existingRuleIndex = this.settings.rules.findIndex(r => r.folderPath === file.path);
                 const existingRule = this.settings.rules[existingRuleIndex];
 
@@ -167,18 +161,28 @@ export default class FolderAutoProperties extends Plugin {
             })
         );
 
+        // Main file creation listener
         this.registerEvent(
             this.app.vault.on("create", (file: TAbstractFile) => {
                 if (file instanceof TFile && file.extension === "md") {
-                    const now = Date.now();
-                    const createdTime = file.stat.ctime;
-                    const diffSeconds = (now - createdTime) / 1000;
+                    // Check if we are already processing this file path
+                    if (this.processingFiles.has(file.path)) return;
+                    
+                    this.processingFiles.add(file.path);
 
-                    if (diffSeconds < FILE_CREATION_WINDOW_SECONDS) {
-                        window.setTimeout(() => { 
-                            this.applyProperties(file).catch(console.error); 
-                        }, FILE_CREATION_DEBOUNCE_MS);
-                    }
+                    window.setTimeout(async () => { 
+                        try {
+                            // CRITICAL: Check if file still exists after the delay (fixes the delete crash)
+                            const stillExists = this.app.vault.getAbstractFileByPath(file.path);
+                            if (stillExists instanceof TFile) {
+                                await this.applyProperties(stillExists);
+                            }
+                        } catch (err) {
+                            console.error("Folder Auto Properties: Async error", err);
+                        } finally {
+                            this.processingFiles.delete(file.path);
+                        }
+                    }, FILE_CREATION_DEBOUNCE_MS);
                 }
             }),
         );
@@ -200,13 +204,9 @@ export default class FolderAutoProperties extends Plugin {
 
     private parsePropertyValue(key: string, rawValue: string): string | string[] | boolean {
         const lowerValue = rawValue.toLowerCase();
-        
         if (lowerValue === "true") return true;
         if (lowerValue === "false") return false;
-        if (key.toLowerCase() === "tags") {
-            return this.parseTags(rawValue);
-        }
-        
+        if (key.toLowerCase() === "tags") return this.parseTags(rawValue);
         return rawValue;
     }
 
@@ -225,14 +225,12 @@ export default class FolderAutoProperties extends Plugin {
                     for (const prop of rule.properties) {
                         const key = prop.key.trim();
                         const value = prop.value.trim();
-                        
                         if (!key || !value) continue;
 
                         const parsedValue = this.parsePropertyValue(key, value);
                         const keyLower = key.toLowerCase();
 
                         if (keyLower === "tags") {
-                            // Ensure parsedValue is treated as string[] for mergeTags
                             const tagsToMerge = Array.isArray(parsedValue) ? parsedValue : [String(parsedValue)];
                             frontmatter[key] = this.mergeTags(frontmatter[key], tagsToMerge);
                         } else if (!frontmatter[key] || frontmatter[key] === "") {
@@ -242,7 +240,8 @@ export default class FolderAutoProperties extends Plugin {
                 }
             });
         } catch (e) { 
-            console.error("Folder Auto Properties Error:", e); 
+            // Silent fail if file is being modified elsewhere, prevents plugin from hanging
+            console.warn("Folder Auto Properties: Could not process frontmatter (file might be busy or deleted).");
         }
     }
 
@@ -280,7 +279,6 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
             );
 
         containerEl.createEl("hr");
-
         this.plugin.settings.rules.sort((a, b) => a.folderPath.localeCompare(b.folderPath));
 
         const subRuleCounters: Record<string, number> = {};
@@ -312,7 +310,6 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
             if (folderLabel) ruleTitle += ` - ${folderLabel}`;
 
             const ruleContainer = containerEl.createDiv("folder-auto-prop-rule-card");
-            
             if (depth > 0) {
                 ruleContainer.addClass("folder-auto-prop-nested");
                 ruleContainer.addClass(`folder-auto-prop-depth-${Math.min(depth, 5)}`);
