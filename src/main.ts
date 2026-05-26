@@ -14,9 +14,12 @@ interface FrontMatter {
     [key: string]: string | string[] | boolean | number | null | undefined;
 }
 
+export type PropertyType = "text" | "number" | "checkbox" | "date" | "datetime" | "tags" | "list";
+
 interface PropertyField {
     key: string;
-    value: string;
+    value: string | boolean | number | string[];
+    type: PropertyType;
 }
 
 interface FolderRule {
@@ -41,66 +44,6 @@ const getFolderDisplayName = (path: string): string => {
     return parts.slice(-2).join("/");
 };
 
-class FolderRuleModal extends Modal {
-    rule: FolderRule;
-    plugin: FolderAutoProperties;
-    onSave: (rule: FolderRule) => Promise<void>;
-
-    constructor(app: App, plugin: FolderAutoProperties, rule: FolderRule, onSave: (rule: FolderRule) => Promise<void>) {
-        super(app);
-        this.plugin = plugin;
-        this.rule = JSON.parse(JSON.stringify(rule)) as FolderRule;
-        this.onSave = onSave;
-    }
-
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.empty();
-        
-        new Setting(contentEl).setName(`Rule for: ${this.rule.folderPath}`).setHeading();
-        const propsContainer = contentEl.createDiv();
-
-        const renderProps = () => {
-            propsContainer.empty();
-            this.rule.properties.forEach((prop, index) => {
-                new Setting(propsContainer)
-                    .addText(cb => cb
-                        .setPlaceholder("Key")
-                        .setValue(prop.key)
-                        .onChange((v) => { prop.key = v; }))
-                    .addText(cb => cb
-                        .setPlaceholder("Value")
-                        .setValue(prop.value)
-                        .onChange((v) => { prop.value = v; }))
-                    .addExtraButton(cb => cb
-                        .setIcon("trash")
-                        .onClick(() => {
-                            this.rule.properties.splice(index, 1);
-                            renderProps();
-                        }));
-            });
-        };
-
-        renderProps();
-
-        new Setting(contentEl)
-            .addButton(bt => bt
-                .setButtonText("Add property")
-                .onClick(() => {
-                    this.rule.properties.push({ key: "", value: "" });
-                    renderProps();
-                }))
-            .addButton(bt => bt
-                .setButtonText("Save and close")
-                .setCta()
-                .onClick(() => {
-                    this.onSave(this.rule)
-                        .then(() => this.close())
-                        .catch(console.error);
-                }));
-    }
-}
-
 class FolderSuggest extends AbstractInputSuggest<TFolder> {
     textInputEl: HTMLInputElement;
     constructor(app: App, textInputEl: HTMLInputElement) {
@@ -122,6 +65,109 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
     }
 }
 
+class FolderRuleModal extends Modal {
+    rule: FolderRule;
+    plugin: FolderAutoProperties;
+    onSave: (rule: FolderRule) => Promise<void>;
+
+    constructor(app: App, plugin: FolderAutoProperties, rule: FolderRule, onSave: (rule: FolderRule) => Promise<void>) {
+        super(app);
+        this.plugin = plugin;
+        this.rule = JSON.parse(JSON.stringify(rule)) as FolderRule;
+        this.onSave = onSave;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass("folder-auto-prop-modal");
+        
+        new Setting(contentEl)
+            .setName("Rule for Folder")
+            .setDesc("Select the target folder path")
+            .addText(text => {
+                text.setPlaceholder("Folder path...");
+                text.setValue(this.rule.folderPath);
+                new FolderSuggest(this.app, text.inputEl);
+                text.onChange(v => this.rule.folderPath = v);
+            });
+
+        const propsContainer = contentEl.createDiv();
+
+        const renderProps = () => {
+            propsContainer.empty();
+            this.rule.properties.forEach((prop, index) => {
+                if (!prop.type) prop.type = "text"; 
+
+                const setting = new Setting(propsContainer)
+                    .addText(cb => cb
+                        .setPlaceholder("Key")
+                        .setValue(prop.key)
+                        .onChange((v) => { prop.key = v; }))
+                    .addDropdown(cb => cb
+                        .addOptions({
+                            text: "Text", number: "Number", checkbox: "Checkbox",
+                            date: "Date", datetime: "Date & Time", tags: "Tags", list: "List"
+                        })
+                        .setValue(prop.type)
+                        .onChange((v) => {
+                            prop.type = v as PropertyType;
+                            // Reset value based on type to prevent bad data
+                            if (prop.type === "checkbox") prop.value = false;
+                            else prop.value = "";
+                            renderProps();
+                        })
+                    );
+
+                // Dynamically render the input based on type
+                if (prop.type === "checkbox") {
+                    setting.addToggle(cb => cb
+                        .setValue(Boolean(prop.value))
+                        .onChange(v => prop.value = v)
+                    );
+                } else {
+                    setting.addText(cb => {
+                        cb.setValue(String(prop.value || ""));
+                        if (prop.type === "date") cb.inputEl.type = "date";
+                        if (prop.type === "datetime") cb.inputEl.type = "datetime-local";
+                        if (prop.type === "number") cb.inputEl.type = "number";
+                        
+                        cb.onChange(v => {
+                            if (prop.type === "number") prop.value = Number(v);
+                            else prop.value = v;
+                        });
+                    });
+                }
+
+                setting.addExtraButton(cb => cb
+                    .setIcon("trash")
+                    .onClick(() => {
+                        this.rule.properties.splice(index, 1);
+                        renderProps();
+                    }));
+            });
+        };
+
+        renderProps();
+
+        new Setting(contentEl)
+            .addButton(bt => bt
+                .setButtonText("Add property")
+                .onClick(() => {
+                    this.rule.properties.push({ key: "", value: "", type: "text" });
+                    renderProps();
+                }))
+            .addButton(bt => bt
+                .setButtonText("Save and close")
+                .setCta()
+                .onClick(() => {
+                    this.onSave(this.rule)
+                        .then(() => this.close())
+                        .catch(console.error);
+                }));
+    }
+}
+
 export default class FolderAutoProperties extends Plugin {
     settings!: FolderAutoPropertiesSettings;
     private processingFiles: Set<string> = new Set();
@@ -130,7 +176,7 @@ export default class FolderAutoProperties extends Plugin {
         await this.loadSettings();
         this.addSettingTab(new FolderAutoPropertiesSettingTab(this.app, this));
 
-        // Event for context menu on folders
+        // Folder Context Menu Listener
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu, file) => {
                 if (!(file instanceof TFolder)) return;
@@ -145,7 +191,7 @@ export default class FolderAutoProperties extends Plugin {
                         .onClick(() => {
                             const ruleToEdit = existingRule ? existingRule : { 
                                 folderPath: file.path, 
-                                properties: [{ key: "tags", value: "" }] 
+                                properties: [{ key: "tags", value: "", type: "tags" as PropertyType }] 
                             };
                             
                             new FolderRuleModal(this.app, this, ruleToEdit, async (savedRule) => {
@@ -161,18 +207,44 @@ export default class FolderAutoProperties extends Plugin {
             })
         );
 
-        // Main file creation listener
+        // Vault Rename Listener (Updates paths automatically)
+        this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+            if (file instanceof TFolder) {
+                let changed = false;
+                this.settings.rules.forEach(rule => {
+                    if (rule.folderPath === oldPath) {
+                        rule.folderPath = file.path;
+                        changed = true;
+                    } else if (rule.folderPath.startsWith(oldPath + "/")) {
+                        rule.folderPath = file.path + rule.folderPath.substring(oldPath.length);
+                        changed = true;
+                    }
+                });
+                if (changed) this.saveSettings();
+            }
+        }));
+
+        // Vault Delete Listener (Cleans up orphan rules)
+        this.registerEvent(this.app.vault.on("delete", (file) => {
+            const initialCount = this.settings.rules.length;
+            this.settings.rules = this.settings.rules.filter(rule => 
+                !(rule.folderPath === file.path || rule.folderPath.startsWith(file.path + "/"))
+            );
+            if (this.settings.rules.length !== initialCount) {
+                this.saveSettings();
+            }
+        }));
+
+        // Main File Creation Listener
         this.registerEvent(
             this.app.vault.on("create", (file: TAbstractFile) => {
                 if (file instanceof TFile && file.extension === "md") {
-                    // Check if we are already processing this file path
                     if (this.processingFiles.has(file.path)) return;
                     
                     this.processingFiles.add(file.path);
 
                     window.setTimeout(async () => { 
                         try {
-                            // CRITICAL: Check if file still exists after the delay (fixes the delete crash)
                             const stillExists = this.app.vault.getAbstractFileByPath(file.path);
                             if (stillExists instanceof TFile) {
                                 await this.applyProperties(stillExists);
@@ -192,22 +264,14 @@ export default class FolderAutoProperties extends Plugin {
         return rawValue.split(",").map(t => t.trim()).filter(t => t !== "");
     }
 
-    private mergeTags(existing: string | string[] | boolean | number | null | undefined, newTags: string[]): string[] {
-        let existingTags: string[] = [];
+    private mergeLists(existing: any, newItems: string[]): string[] {
+        let existingItems: string[] = [];
         if (Array.isArray(existing)) {
-            existingTags = existing.map(String);
+            existingItems = existing.map(String);
         } else if (typeof existing === "string") {
-            existingTags = this.parseTags(existing);
+            existingItems = this.parseTags(existing);
         }
-        return [...new Set([...existingTags, ...newTags])];
-    }
-
-    private parsePropertyValue(key: string, rawValue: string): string | string[] | boolean {
-        const lowerValue = rawValue.toLowerCase();
-        if (lowerValue === "true") return true;
-        if (lowerValue === "false") return false;
-        if (key.toLowerCase() === "tags") return this.parseTags(rawValue);
-        return rawValue;
+        return [...new Set([...existingItems, ...newItems])];
     }
 
     async applyProperties(file: TFile) {
@@ -217,6 +281,7 @@ export default class FolderAutoProperties extends Plugin {
 
         if (matchingRules.length === 0) return;
 
+        // Apply parent rules first, then sub-rules
         matchingRules.sort((a, b) => a.folderPath.length - b.folderPath.length);
 
         try {
@@ -224,29 +289,33 @@ export default class FolderAutoProperties extends Plugin {
                 for (const rule of matchingRules) {
                     for (const prop of rule.properties) {
                         const key = prop.key.trim();
-                        const value = prop.value.trim();
-                        if (!key || !value) continue;
+                        if (!key) continue;
 
-                        const parsedValue = this.parsePropertyValue(key, value);
-                        const keyLower = key.toLowerCase();
+                        let valToSet = prop.value;
 
-                        if (keyLower === "tags") {
-                            const tagsToMerge = Array.isArray(parsedValue) ? parsedValue : [String(parsedValue)];
-                            frontmatter[key] = this.mergeTags(frontmatter[key], tagsToMerge);
+                        if (prop.type === "tags" || prop.type === "list") {
+                            const newItems = typeof valToSet === "string" ? this.parseTags(valToSet) : [];
+                            frontmatter[key] = this.mergeLists(frontmatter[key], newItems);
                         } else if (!frontmatter[key] || frontmatter[key] === "") {
-                            frontmatter[key] = parsedValue;
+                            frontmatter[key] = valToSet;
                         }
                     }
                 }
             });
         } catch (e) { 
-            // Silent fail if file is being modified elsewhere, prevents plugin from hanging
             console.warn("Folder Auto Properties: Could not process frontmatter (file might be busy or deleted).");
         }
     }
 
     async loadSettings() { 
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as FolderAutoPropertiesSettings; 
+        
+        // Backwards compatibility migration
+        this.settings.rules.forEach(rule => {
+            rule.properties.forEach(prop => {
+                if (!prop.type) prop.type = "text";
+            });
+        });
     }
     
     async saveSettings() { 
@@ -256,6 +325,8 @@ export default class FolderAutoProperties extends Plugin {
 
 class FolderAutoPropertiesSettingTab extends PluginSettingTab {
     plugin: FolderAutoProperties;
+    collapsedPaths: Set<string> = new Set(); // Tracks collapsed UI state
+
     constructor(app: App, plugin: FolderAutoProperties) { super(app, plugin); this.plugin = plugin; }
 
     display(): void {
@@ -268,8 +339,9 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
             .addButton((btn) => btn
                 .setButtonText("Add rule")
                 .setCta()
+                .setClass("add-rule-btn-custom")
                 .onClick(() => {
-                    const newRule = { folderPath: "", properties: [{ key: "tags", value: "" }] };
+                    const newRule = { folderPath: "", properties: [{ key: "tags", value: "", type: "tags" as PropertyType }] };
                     new FolderRuleModal(this.app, this.plugin, newRule, async (savedRule) => {
                         this.plugin.settings.rules.push(savedRule);
                         await this.plugin.saveSettings();
@@ -286,13 +358,14 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 
         this.plugin.settings.rules.forEach((rule, ruleIndex) => {
             const parentRule = this.plugin.settings.rules.find(r => 
-                r.folderPath !== rule.folderPath && 
-                rule.folderPath.startsWith(r.folderPath + "/")
+                r.folderPath !== rule.folderPath && rule.folderPath.startsWith(r.folderPath + "/")
             );
 
+            // If parent is collapsed, skip rendering this child
+            if (parentRule && this.collapsedPaths.has(parentRule.folderPath)) return;
+
             const depth = this.plugin.settings.rules.filter(r => 
-                r.folderPath !== rule.folderPath && 
-                rule.folderPath.startsWith(r.folderPath + "/")
+                r.folderPath !== rule.folderPath && rule.folderPath.startsWith(r.folderPath + "/")
             ).length;
 
             let ruleTitle = "";
@@ -315,7 +388,7 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
                 ruleContainer.addClass(`folder-auto-prop-depth-${Math.min(depth, 5)}`);
             }
 
-            new Setting(ruleContainer)
+            const settingItem = new Setting(ruleContainer)
                 .setName(ruleTitle)
                 .addText((text) => {
                     text.setPlaceholder("Path...");
@@ -327,26 +400,59 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
                             .then(() => this.display())
                             .catch(console.error); 
                     });
-                })
-                .addButton((btn) => btn
-                    .setButtonText("Edit properties")
+                });
+
+            // Toggle Visibility Button (if it has children)
+            const hasChildren = this.plugin.settings.rules.some(r => r.folderPath !== rule.folderPath && r.folderPath.startsWith(rule.folderPath + "/"));
+            if (hasChildren) {
+                const isCollapsed = this.collapsedPaths.has(rule.folderPath);
+                settingItem.addExtraButton(btn => btn
+                    .setIcon(isCollapsed ? "chevron-right" : "chevron-down")
+                    .setTooltip(isCollapsed ? "Expand sub-rules" : "Collapse sub-rules")
                     .onClick(() => {
-                        new FolderRuleModal(this.app, this.plugin, rule, async (savedRule) => {
-                            this.plugin.settings.rules[ruleIndex] = savedRule;
-                            await this.plugin.saveSettings();
-                            this.display();
-                        }).open();
-                    })
-                )
-                .addExtraButton((btn) => btn
-                    .setIcon("trash")
-                    .onClick(() => {
-                        this.plugin.settings.rules.splice(ruleIndex, 1);
-                        this.plugin.saveSettings()
-                            .then(() => this.display())
-                            .catch(console.error);
+                        if (isCollapsed) this.collapsedPaths.delete(rule.folderPath);
+                        else this.collapsedPaths.add(rule.folderPath);
+                        this.display(); // Re-render to show/hide children
                     })
                 );
+            }
+
+            // Add Sub-rule Button
+            settingItem.addExtraButton((btn) => btn
+                .setIcon("plus")
+                .setTooltip("Add Sub-rule")
+                .onClick(() => {
+                    const newRule = { folderPath: rule.folderPath + "/subfolder", properties: [{ key: "tags", value: "", type: "tags" as PropertyType }] };
+                    new FolderRuleModal(this.app, this.plugin, newRule, async (savedRule) => {
+                        this.plugin.settings.rules.push(savedRule);
+                        this.collapsedPaths.delete(rule.folderPath); // Ensure parent expands
+                        await this.plugin.saveSettings();
+                        this.display();
+                    }).open();
+                })
+            );
+
+            settingItem.addButton((btn) => btn
+                .setButtonText("Edit")
+                .onClick(() => {
+                    new FolderRuleModal(this.app, this.plugin, rule, async (savedRule) => {
+                        this.plugin.settings.rules[ruleIndex] = savedRule;
+                        await this.plugin.saveSettings();
+                        this.display();
+                    }).open();
+                })
+            );
+
+            settingItem.addExtraButton((btn) => btn
+                .setIcon("trash")
+                .setTooltip("Delete rule")
+                .onClick(() => {
+                    this.plugin.settings.rules.splice(ruleIndex, 1);
+                    this.plugin.saveSettings()
+                        .then(() => this.display())
+                        .catch(console.error);
+                })
+            );
         });
     }
 }

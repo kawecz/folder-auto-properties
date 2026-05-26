@@ -1,7 +1,7 @@
 {
-    "name": "obsidian-sample-plugin",
-    "version": "1.1.1",
-    "description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+    "name": "obsidian-folder-auto-properties",
+    "version": "2.0.0",
+    "description": "Automatically apply specific properties to new notes based on their folder.",
     "main": "main.js",
     "type": "module",
     "scripts": {

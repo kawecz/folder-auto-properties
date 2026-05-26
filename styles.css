@@ -4,6 +4,20 @@
     margin-bottom: 15px;
     border-radius: 8px;
     background-color: var(--background-secondary);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.folder-auto-prop-rule-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.add-rule-btn-custom {
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+}
+
+.add-rule-btn-custom:hover {
+    transform: scale(1.1) !important;
 }
 
 /* Tree visuals for nested subfolder rules */
@@ -13,6 +27,7 @@
     border-bottom-left-radius: 0;
     position: relative;
     opacity: 0.95;
+    padding-left: 20px;
 }
 
 /* Connective lines for the tree structure */
@@ -26,33 +41,16 @@
     background-color: var(--interactive-accent);
 }
 
-/* Depth classes (replacing inline styles to pass bot checks) */
 .folder-auto-prop-depth-1 { margin-left: 20px; }
 .folder-auto-prop-depth-2 { margin-left: 40px; }
 .folder-auto-prop-depth-3 { margin-left: 60px; }
 .folder-auto-prop-depth-4 { margin-left: 80px; }
 .folder-auto-prop-depth-5 { margin-left: 100px; }
 
-.folder-auto-prop-indent {
-    margin-left: 20px;
-    margin-top: 10px;
-}
-
-.folder-auto-prop-stacked {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    gap: 8px !important;
-    border-top: none !important;
-    padding: 5px 0 !important;
-}
-
-.folder-auto-prop-stacked .setting-item-control {
-    flex-wrap: wrap !important;
-    justify-content: flex-start !important;
-}
-
-.folder-auto-prop-stacked input {
-    width: 100% !important;
-    max-width: 150px !important;
-    margin: 2px !important;
+/* Keep modal input sizing neat for standard, date, and numbers */
+.folder-auto-prop-modal input[type="date"],
+.folder-auto-prop-modal input[type="datetime-local"],
+.folder-auto-prop-modal input[type="number"] {
+    width: 100%;
+    min-width: 150px;
 }
