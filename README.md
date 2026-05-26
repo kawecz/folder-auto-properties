@@ -1,79 +1,40 @@
+# Folder Auto Properties for Obsidian
 
-# Folder Auto Properties
+Automatically apply specific properties (frontmatter) to new notes based on the folder they are created in. 
 
-**Folder Auto Properties** is a lightweight, "power-user" plugin for Obsidian that automates your metadata workflow. It allows you to define specific rules for folders so that any new note created within them automatically receives predefined Properties (YAML frontmatter).
+Keep your vault organized without the friction of manually typing out tags, checkboxes, and metadata every time you create a new file.
 
------
+## ✨ Features
 
-## 🚀 Key Features
+* **Zero-Friction Metadata:** Create a rule for a folder, and any new `.md` file created inside it will instantly receive your predefined properties.
+* **Dynamic Property Types:** Supports Obsidian's native property types: `Text`, `Number`, `Checkbox`, `Date`, `Datetime`, `Tags`, and `List`. The settings UI adapts automatically (e.g., giving you toggles for checkboxes).
+* **Smart Folder Tracking:** If you rename or move a folder in your vault, your rules update automatically. If you delete a folder, the rule cleans itself up.
+* **Nested Sub-rules:** Create specific rules for sub-folders. The settings UI visualizes your folder tree and lets you collapse/expand parent folders to keep things tidy.
+* **Merge Logic for Lists & Tags:** If a note already has tags (e.g., from a template), the plugin intelligently merges your folder tags without overwriting existing ones.
 
-  * **Folder-Specific Rules:** Set different metadata for your `University`, `Work`, and `Personal` folders.
-  * **Dynamic Folder Suggestion:** Integrated folder search makes it easy to map paths without typing them manually.
-  * **Smart Property Injection:** Uses the Obsidian `processFrontMatter` API to safely add properties without overwriting existing content.
-  * **"Empty-Value" Logic:** Define property templates (like `banner` or `tags`) in settings; if left empty, they won't be added to the note, keeping your files clean.
-  * **Developer Friendly:** Built with TypeScript and optimized for performance with a zero-footprint approach.
+## 🛠️ How to Use
 
------
+There are two ways to create a rule:
 
-## 🛠️ How It Works
+**Method 1: Context Menu (Quickest)**
+1. Right-click any folder in your Obsidian File Explorer.
+2. Select **Add folder auto property rule**.
+3. Add your keys, choose their types, set the values, and hit save.
 
-1.  Open **Plugin Settings**.
-2.  Click **Add Rule**.
-3.  Start typing a **Folder Path** (the plugin will suggest existing folders in your vault).
-4.  Add **Properties** (Key/Value pairs).
-5.  Create a new note in that folder—your properties will appear instantly\!
+**Method 2: Settings Tab**
+1. Go to `Settings` -> `Folder Auto Properties`.
+2. Click **Add rule**.
+3. Use the autocomplete search box to find your target folder.
+4. Define your properties.
+5. Use the **+** icon on any existing rule to quickly create a nested sub-rule.
 
-> **Note:** If you create a rule with a key but leave the value blank, that property will be ignored during note creation. This allows you to keep a "master list" of potential properties in your settings without cluttering every note.
+## ⚙️ Requirements
+* Obsidian v1.1.1 or higher.
 
+## 📦 Installation
 
-## 📸 Preview
-| Settings Overview | Property Configuration |
-| :---: | :---: |
-| ![Settings](public/imgs/img1.png) | ![Properties](public/imgs/img2.png) |
-
-
------
-
-## 📂 Installation
-
-### Community Plugin Store (Pending)
-
-Search for `Folder Auto Properties` in the Obsidian Community Plugins settings.
-
-### Beta Testing (via BRAT)
-
-1.  Install the [Obsidian 42 - BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin.
-2.  Add this repository URL: `https://github.com/kawecz/folder-auto-properties`.
-
-### Manual Installation
-
-1.  Download `main.js`, `manifest.json`, and `styles.css` from the latest [Release](https://github.com/kawecz/folder-auto-properties/releases/latest).
-2.  Create a folder named `folder-auto-properties` in your vault's `.obsidian/plugins/` directory.
-3.  Move the downloaded files into that folder.
-4.  Reload Obsidian and enable the plugin.
-
------
-
-## 💻 Technical Details
-
-The plugin listens for the `vault.on('create')` event. To ensure compatibility with other plugins (like Core Templates), it includes a 500ms safety delay before injecting metadata, ensuring the file is ready for write operations.
-
-### Development Stack
-
-  * **Language:** TypeScript
-  * **Build Tool:** ESBuild
-  * **Framework:** Obsidian API
-
------
-
-## 📄 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](https://github.com/kawecz/folder-auto-properties/blob/main/LICENSE) file for details.
-
------
-
-## 🤝 Contributing
-
-As a student-led project, contributions and feedback are highly welcome\! Please open an issue or submit a pull request if you have ideas for improvements.
-
-**Created by  Kawê Cezar**
+**Manual Installation:**
+1. Download the `main.js`, `manifest.json`, and `style.css` files from the latest [GitHub Release].
+2. Create a folder named `folder-auto-properties` inside your vault's `.obsidian/plugins/` directory.
+3. Place the downloaded files into that folder.
+4. Reload Obsidian and enable the plugin in Community Plugins.
