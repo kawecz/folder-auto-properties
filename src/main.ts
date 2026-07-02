@@ -864,7 +864,7 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 
 		// Use Setting.setHeading() for consistent UI
 		new Setting(containerEl)
-			.setName("General Settings")
+			.setName("Folder Rules")
 			.setHeading();
 
 		containerEl.createEl("p", {
