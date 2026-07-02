@@ -423,7 +423,7 @@ export default class FolderAutoProperties extends Plugin {
 			this.addSettingTab(new FolderAutoPropertiesSettingTab(this.app, this));
 
 		// Mark as initialized after a delay to prevent processing existing files on startup
-		setTimeout(() => {
+		window.setTimeout(() => {
 			this.initialized = true;
 		}, 1000);
 
@@ -864,7 +864,7 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 
 		// Use Setting.setHeading() for consistent UI
 		new Setting(containerEl)
-			.setName("Folder Auto Properties")
+			.setName("General Settings")
 			.setHeading();
 
 		containerEl.createEl("p", {
