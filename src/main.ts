@@ -11,7 +11,7 @@ import {
 } from "obsidian";
 
 interface FrontMatter {
-	[key: string]: any;
+	[key: string]: unknown;
 }
 
 export type PropertyType =
@@ -224,7 +224,7 @@ typeDropdown.addEventListener("change", () => {
 					cls: "fap-delete-property-btn",
 					attr: { "aria-label": "Delete property" }
 				});
-				deleteBtn.innerHTML = "✕";
+				deleteBtn.setText("✕");
 				deleteBtn.addEventListener("click", () => {
 					this.rule.properties.splice(index, 1);
 					renderProps();
@@ -493,7 +493,11 @@ export default class FolderAutoProperties extends Plugin {
 							changed = true;
 						}
 					});
-					if (changed) this.saveSettings();
+					if (changed) {
+						this.saveSettings().catch((err) => {
+							console.error("Folder Auto Properties: Failed to save settings after rename", err);
+						});
+					}
 				}
 			}),
 		);
@@ -509,7 +513,9 @@ export default class FolderAutoProperties extends Plugin {
 						),
 				);
 				if (this.settings.rules.length !== initialCount) {
-					this.saveSettings();
+					this.saveSettings().catch((err) => {
+						console.error("Folder Auto Properties: Failed to save settings after delete", err);
+					});
 				}
 			}),
 		);
@@ -744,7 +750,7 @@ async applyProperties(file: TFile) {
 			try {
 				await this.app.fileManager.renameFile(file, newPath);
 				// Wait a bit for the rename to complete before continuing
-				await new Promise(resolve => setTimeout(resolve, 100));
+				await new Promise(resolve => window.setTimeout(resolve, 100));
 			} catch (err) {
 				console.warn("Folder Auto Properties: Could not rename file to", newFileName, err);
 			}
@@ -856,12 +862,17 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		const headerEl = containerEl.createDiv("folder-auto-prop-header");
-		headerEl.createEl("h2", { text: "Folder Auto Properties" });
-		headerEl.createEl("p", {
+		// Use Setting.setHeading() for consistent UI
+		new Setting(containerEl)
+			.setName("Folder Auto Properties")
+			.setHeading();
+
+		containerEl.createEl("p", {
 			text: "Define properties for specific folders. Rules apply to new notes only. Sub-rules are collapsed by default.",
 			cls: "setting-item-description",
 		});
+		
+	
 
 		new Setting(containerEl)
 			.setName("Add new rule")
@@ -976,7 +987,8 @@ class FolderAutoPropertiesSettingTab extends PluginSettingTab {
 							: "Collapse sub-rules",
 					},
 				});
-				toggleBtn.innerHTML = isCollapsed ? "▶" : "▼";
+				// Use setText() instead of innerHTML
+				toggleBtn.setText(isCollapsed ? "▶" : "▼");
 				toggleBtn.addEventListener("click", () => {
 					if (isCollapsed) {
 						this.collapsedPaths.delete(rule.folderPath);
